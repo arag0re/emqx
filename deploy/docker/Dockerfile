@@ -41,6 +41,8 @@ RUN groupadd -r -g 1000 emqx; \
     chmod -Rf g+w /opt/emqx; \
     chown -Rf emqx /opt/emqx
 
+USER root
+RUN apt remove --auto-remove libdb5.3 libgcrypt20 perl e2fsprogs ncurses-base ncurses-bin -y --allow-remove-essential
 USER emqx
 
 VOLUME ["/opt/emqx/log", "/opt/emqx/data"]
