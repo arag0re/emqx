@@ -48,6 +48,8 @@ RUN adduser -D -u 1000 emqx \
 RUN chgrp -Rf emqx /opt/emqx && chmod -Rf g+w /opt/emqx \
     && chown -Rf emqx /opt/emqx
 
+RUN apk update
+RUN apk upgrade --available && sync
 USER emqx
 
 ## NOTE: /opt/emqx/etc is removed from the VOLUME list since 4.3.13
