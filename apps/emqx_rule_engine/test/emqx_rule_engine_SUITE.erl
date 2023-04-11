@@ -25,6 +25,8 @@
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("common_test/include/ct.hrl").
 
+-import(emqx_common_test_helpers, [on_exit/1]).
+
 %%-define(PROPTEST(M,F), true = proper:quickcheck(M:F())).
 -define(TMP_RULEID, atom_to_binary(?FUNCTION_NAME)).
 
@@ -198,8 +200,11 @@ init_per_testcase(_TestCase, Config) ->
 
 end_per_testcase(t_events, Config) ->
     ets:delete(events_record_tab),
-    ok = delete_rule(?config(hook_points_rules, Config));
+    ok = delete_rule(?config(hook_points_rules, Config)),
+    emqx_common_test_helpers:call_janitor(),
+    ok;
 end_per_testcase(_TestCase, _Config) ->
+    emqx_common_test_helpers:call_janitor(),
     ok.
 
 %%------------------------------------------------------------------------------
@@ -2629,6 +2634,39 @@ t_sqlparse_invalid_json(_Config) ->
             }
         )
     ).
+
+t_sqlparse_both_string_types_in_from(_Config) ->
+    %% Here is an SQL select statement with both string types in the FROM clause
+    SqlSelect =
+        "select clientid, topic as tp "
+        "from 't/tt', \"$events/client_connected\" ",
+    ?assertMatch(
+        {ok, #{<<"clientid">> := <<"abc">>, <<"tp">> := <<"t/tt">>}},
+        emqx_rule_sqltester:test(
+            #{
+                sql => SqlSelect,
+                context => #{clientid => <<"abc">>, topic => <<"t/tt">>}
+            }
+        )
+    ),
+    %% Here is an SQL foreach statement with both string types in the FROM clause
+    SqlForeach =
+        "foreach payload.sensors "
+        "from 't/#', \"$events/client_connected\" ",
+    ?assertMatch(
+        {ok, []},
+        emqx_rule_sqltester:test(
+            #{
+                sql => SqlForeach,
+                context =>
+                    #{
+                        payload => <<"{\"sensors\": 1}">>,
+                        topic => <<"t/a">>
+                    }
+            }
+        )
+    ).
+
 %%------------------------------------------------------------------------------
 %% Test cases for telemetry functions
 %%------------------------------------------------------------------------------
@@ -2680,6 +2718,24 @@ t_get_basic_usage_info_1(_Config) ->
                 }
         },
         emqx_rule_engine:get_basic_usage_info()
+    ),
+    ok.
+
+t_get_rule_ids_by_action_reference_ingress_bridge(_Config) ->
+    BridgeId = <<"mqtt:ingress">>,
+    RuleId = <<"rule:ingress_bridge_referenced">>,
+    {ok, _} =
+        emqx_rule_engine:create_rule(
+            #{
+                id => RuleId,
+                sql => <<"select 1 from \"$bridges/", BridgeId/binary, "\"">>,
+                actions => [#{function => console}]
+            }
+        ),
+    on_exit(fun() -> emqx_rule_engine:delete_rule(RuleId) end),
+    ?assertMatch(
+        [RuleId],
+        emqx_rule_engine:get_rule_ids_by_action(BridgeId)
     ),
     ok.
 

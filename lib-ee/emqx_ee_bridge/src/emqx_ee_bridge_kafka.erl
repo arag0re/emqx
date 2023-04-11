@@ -64,7 +64,7 @@ values(common_config) ->
         authentication => #{
             mechanism => <<"plain">>,
             username => <<"username">>,
-            password => <<"password">>
+            password => <<"******">>
         },
         bootstrap_hosts => <<"localhost:9092">>,
         connect_timeout => <<"5s">>,
@@ -105,7 +105,7 @@ values(consumer) ->
     #{
         kafka => #{
             max_batch_bytes => <<"896KB">>,
-            offset_reset_policy => <<"reset_to_latest">>,
+            offset_reset_policy => <<"latest">>,
             offset_commit_interval_seconds => 5
         },
         key_encoding_mode => <<"none">>,
@@ -221,17 +221,21 @@ fields(socket_opts) ->
         {sndbuf,
             mk(
                 emqx_schema:bytesize(),
-                #{default => <<"1024KB">>, desc => ?DESC(socket_send_buffer)}
+                #{default => <<"1MB">>, desc => ?DESC(socket_send_buffer)}
             )},
         {recbuf,
             mk(
                 emqx_schema:bytesize(),
-                #{default => <<"1024KB">>, desc => ?DESC(socket_receive_buffer)}
+                #{default => <<"1MB">>, desc => ?DESC(socket_receive_buffer)}
             )},
         {nodelay,
             mk(
                 boolean(),
-                #{default => true, desc => ?DESC(socket_nodelay)}
+                #{
+                    default => true,
+                    importance => ?IMPORTANCE_HIDDEN,
+                    desc => ?DESC(socket_nodelay)
+                }
             )}
     ];
 fields(producer_opts) ->
@@ -364,14 +368,14 @@ fields(consumer_kafka_opts) ->
             })},
         {max_rejoin_attempts,
             mk(non_neg_integer(), #{
-                hidden => true,
+                importance => ?IMPORTANCE_HIDDEN,
                 default => 5,
                 desc => ?DESC(consumer_max_rejoin_attempts)
             })},
         {offset_reset_policy,
             mk(
-                enum([reset_to_latest, reset_to_earliest, reset_by_subscriber]),
-                #{default => reset_to_latest, desc => ?DESC(consumer_offset_reset_policy)}
+                enum([latest, earliest]),
+                #{default => latest, desc => ?DESC(consumer_offset_reset_policy)}
             )},
         {offset_commit_interval_seconds,
             mk(

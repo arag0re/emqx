@@ -28,7 +28,18 @@
 -define(DEFAULT_INIT_TXN_ID, -1).
 
 start(_StartType, _StartArgs) ->
-    init_conf(),
+    try
+        ok = init_conf()
+    catch
+        C:E:St ->
+            ?SLOG(critical, #{
+                msg => failed_to_init_config,
+                exception => C,
+                reason => E,
+                stacktrace => St
+            }),
+            init:stop(1)
+    end,
     ok = emqx_config_logger:refresh_config(),
     emqx_conf_sup:start_link().
 
@@ -84,19 +95,22 @@ init_load() ->
 -endif.
 
 init_conf() ->
+    %% Workaround for https://github.com/emqx/mria/issues/94:
+    _ = mria_rlog:wait_for_shards([?CLUSTER_RPC_SHARD], 1000),
+    _ = mria:wait_for_tables([?CLUSTER_MFA, ?CLUSTER_COMMIT]),
     {ok, TnxId} = copy_override_conf_from_core_node(),
-    emqx_app:set_init_tnx_id(TnxId),
-    init_load(),
-    emqx_app:set_init_config_load_done().
+    _ = emqx_app:set_init_tnx_id(TnxId),
+    ok = init_load(),
+    ok = emqx_app:set_init_config_load_done().
 
 cluster_nodes() ->
-    maps:get(running_nodes, ekka_cluster:info()) -- [node()].
+    mria:cluster_nodes(cores) -- [node()].
 
 copy_override_conf_from_core_node() ->
     case cluster_nodes() of
         %% The first core nodes is self.
         [] ->
-            ?SLOG(debug, #{msg => "skip_copy_overide_conf_from_core_node"}),
+            ?SLOG(debug, #{msg => "skip_copy_override_conf_from_core_node"}),
             {ok, ?DEFAULT_INIT_TXN_ID};
         Nodes ->
             {Results, Failed} = emqx_conf_proto_v2:get_override_config_file(Nodes),
@@ -130,7 +144,7 @@ copy_override_conf_from_core_node() ->
                             %% finish the boot sequence and load the
                             %% config for other nodes to copy it.
                             ?SLOG(info, #{
-                                msg => "skip_copy_overide_conf_from_core_node",
+                                msg => "skip_copy_override_conf_from_core_node",
                                 loading_from_disk => true,
                                 nodes => Nodes,
                                 failed => Failed,
@@ -142,7 +156,7 @@ copy_override_conf_from_core_node() ->
                             Jitter = rand:uniform(2_000),
                             Timeout = 10_000 + Jitter,
                             ?SLOG(info, #{
-                                msg => "copy_overide_conf_from_core_node_retry",
+                                msg => "copy_override_conf_from_core_node_retry",
                                 timeout => Timeout,
                                 nodes => Nodes,
                                 failed => Failed,
@@ -155,7 +169,7 @@ copy_override_conf_from_core_node() ->
                     [{ok, Info} | _] = lists:sort(fun conf_sort/2, Ready),
                     #{node := Node, conf := RawOverrideConf, tnx_id := TnxId} = Info,
                     ?SLOG(debug, #{
-                        msg => "copy_overide_conf_from_core_node_success",
+                        msg => "copy_override_conf_from_core_node_success",
                         node => Node,
                         cluster_override_conf_file => application:get_env(
                             emqx, cluster_override_conf_file

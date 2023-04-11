@@ -7,7 +7,7 @@ export EMQX_DEFAULT_RUNNER = debian:11-slim
 export OTP_VSN ?= $(shell $(CURDIR)/scripts/get-otp-vsn.sh)
 export ELIXIR_VSN ?= $(shell $(CURDIR)/scripts/get-elixir-vsn.sh)
 export EMQX_DASHBOARD_VERSION ?= v1.2.0
-export EMQX_EE_DASHBOARD_VERSION ?= e1.0.5-beta.3
+export EMQX_EE_DASHBOARD_VERSION ?= e1.0.5
 export EMQX_REL_FORM ?= tgz
 export QUICER_DOWNLOAD_FROM_RELEASE = 1
 ifeq ($(OS),Windows_NT)
@@ -82,7 +82,7 @@ ct: $(REBAR) merge-config
 static_checks:
 	@$(REBAR) as check do xref, dialyzer
 	@if [ "$${PROFILE}" = 'emqx-enterprise' ]; then $(REBAR) ct --suite apps/emqx/test/emqx_static_checks --readable $(CT_READABLE); fi
-	@if [ "$${PROFILE}" = 'emqx-enterprise' ]; then ./scripts/check-i18n-style.sh; fi
+	./scripts/check-i18n-style.sh
 
 APPS=$(shell $(SCRIPTS)/find-apps.sh)
 

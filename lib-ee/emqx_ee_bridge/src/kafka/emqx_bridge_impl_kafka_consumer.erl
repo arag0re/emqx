@@ -59,8 +59,7 @@
     subscriber_id := subscriber_id(),
     kafka_client_id := brod:client_id()
 }.
--type offset_reset_policy() :: reset_to_latest | reset_to_earliest | reset_by_subscriber.
-%% -type mqtt_payload() :: full_message | message_value.
+-type offset_reset_policy() :: latest | earliest.
 -type encoding_mode() :: none | base64.
 -type consumer_init_data() :: #{
     hookpoint := binary(),
@@ -95,6 +94,11 @@
     group_id => brod:group_id(),
     commit_fun => brod_group_subscriber_v2:commit_fun()
 }.
+
+-define(CLIENT_DOWN_MESSAGE,
+    "Failed to start Kafka client. Please check the logs for errors and check"
+    " the connection parameters."
+).
 
 %%-------------------------------------------------------------------------------------
 %% `emqx_resource' API
@@ -153,7 +157,7 @@ on_start(InstanceId, Config) ->
                 kafka_hosts => BootstrapHosts,
                 reason => emqx_misc:redact(Reason)
             }),
-            throw(failed_to_start_kafka_client)
+            throw(?CLIENT_DOWN_MESSAGE)
     end,
     start_consumer(Config, InstanceId, ClientID).
 
@@ -174,7 +178,7 @@ on_get_status(_InstanceID, State) ->
         kafka_client_id := ClientID,
         kafka_topics := KafkaTopics
     } = State,
-    do_get_status(ClientID, KafkaTopics, SubscriberId).
+    do_get_status(State, ClientID, KafkaTopics, SubscriberId).
 
 %%-------------------------------------------------------------------------------------
 %% `brod_group_subscriber' API
@@ -271,7 +275,7 @@ start_consumer(Config, InstanceId, ClientID) ->
             max_batch_bytes := MaxBatchBytes,
             max_rejoin_attempts := MaxRejoinAttempts,
             offset_commit_interval_seconds := OffsetCommitInterval,
-            offset_reset_policy := OffsetResetPolicy
+            offset_reset_policy := OffsetResetPolicy0
         },
         key_encoding_mode := KeyEncodingMode,
         topic_mapping := TopicMapping0,
@@ -290,7 +294,15 @@ start_consumer(Config, InstanceId, ClientID) ->
     %% cluster, so that the load gets distributed between all
     %% consumers and we don't repeat messages in the same cluster.
     GroupID = consumer_group_id(BridgeName),
+    %% earliest or latest
+    BeginOffset = OffsetResetPolicy0,
+    OffsetResetPolicy =
+        case OffsetResetPolicy0 of
+            latest -> reset_to_latest;
+            earliest -> reset_to_earliest
+        end,
     ConsumerConfig = [
+        {begin_offset, BeginOffset},
         {max_bytes, MaxBatchBytes},
         {offset_reset_policy, OffsetResetPolicy}
     ],
@@ -363,22 +375,41 @@ stop_client(ClientID) ->
     ),
     ok.
 
-do_get_status(ClientID, [KafkaTopic | RestTopics], SubscriberId) ->
+do_get_status(State, ClientID, [KafkaTopic | RestTopics], SubscriberId) ->
     case brod:get_partitions_count(ClientID, KafkaTopic) of
         {ok, NPartitions} ->
-            case do_get_status(ClientID, KafkaTopic, SubscriberId, NPartitions) of
-                connected -> do_get_status(ClientID, RestTopics, SubscriberId);
+            case do_get_status1(ClientID, KafkaTopic, SubscriberId, NPartitions) of
+                connected -> do_get_status(State, ClientID, RestTopics, SubscriberId);
                 disconnected -> disconnected
             end;
+        {error, {client_down, Context}} ->
+            case infer_client_error(Context) of
+                auth_error ->
+                    Message = "Authentication error. " ++ ?CLIENT_DOWN_MESSAGE,
+                    {disconnected, State, Message};
+                {auth_error, Message0} ->
+                    Message = binary_to_list(Message0) ++ "; " ++ ?CLIENT_DOWN_MESSAGE,
+                    {disconnected, State, Message};
+                connection_refused ->
+                    Message = "Connection refused. " ++ ?CLIENT_DOWN_MESSAGE,
+                    {disconnected, State, Message};
+                _ ->
+                    {disconnected, State, ?CLIENT_DOWN_MESSAGE}
+            end;
+        {error, leader_not_available} ->
+            Message =
+                "Leader connection not available. Please check the Kafka topic used,"
+                " the connection parameters and Kafka cluster health",
+            {disconnected, State, Message};
         _ ->
             disconnected
     end;
-do_get_status(_ClientID, _KafkaTopics = [], _SubscriberId) ->
+do_get_status(_State, _ClientID, _KafkaTopics = [], _SubscriberId) ->
     connected.
 
--spec do_get_status(brod:client_id(), binary(), subscriber_id(), pos_integer()) ->
+-spec do_get_status1(brod:client_id(), binary(), subscriber_id(), pos_integer()) ->
     connected | disconnected.
-do_get_status(ClientID, KafkaTopic, SubscriberId, NPartitions) ->
+do_get_status1(ClientID, KafkaTopic, SubscriberId, NPartitions) ->
     Results =
         lists:map(
             fun(N) ->
@@ -497,3 +528,15 @@ encode(Value, base64) ->
 
 to_bin(B) when is_binary(B) -> B;
 to_bin(A) when is_atom(A) -> atom_to_binary(A, utf8).
+
+infer_client_error(Error) ->
+    case Error of
+        [{_BrokerEndpoint, {econnrefused, _}} | _] ->
+            connection_refused;
+        [{_BrokerEndpoint, {{sasl_auth_error, Message}, _}} | _] when is_binary(Message) ->
+            {auth_error, Message};
+        [{_BrokerEndpoint, {{sasl_auth_error, _}, _}} | _] ->
+            auth_error;
+        _ ->
+            undefined
+    end.

@@ -7,6 +7,7 @@
 
 %% callbacks of behaviour emqx_resource
 -export([
+    is_buffer_supported/0,
     callback_mode/0,
     on_start/2,
     on_stop/2,
@@ -25,6 +26,8 @@
 %% TODO: rename this to `kafka_producer' after alias support is added
 %% to hocon; keeping this as just `kafka' for backwards compatibility.
 -define(BRIDGE_TYPE, kafka).
+
+is_buffer_supported() -> true.
 
 callback_mode() -> async_if_possible.
 
@@ -111,7 +114,10 @@ on_start(InstId, Config) ->
                     client_id => ClientId
                 }
             ),
-            throw(failed_to_start_kafka_producer)
+            throw(
+                "Failed to start Kafka client. Please check the logs for errors and check"
+                " the connection parameters."
+            )
     end.
 
 on_stop(_InstanceID, #{client_id := ClientID, producers := Producers, resource_id := ResourceID}) ->

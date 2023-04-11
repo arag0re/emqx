@@ -230,7 +230,7 @@ roots(low) ->
         {"crl_cache",
             sc(
                 ref("crl_cache"),
-                #{hidden => true}
+                #{importance => ?IMPORTANCE_HIDDEN}
             )}
     ].
 
@@ -1492,7 +1492,7 @@ fields("broker") ->
         {"perf",
             sc(
                 ref("broker_perf"),
-                #{}
+                #{importance => ?IMPORTANCE_HIDDEN}
             )},
         {"shared_subscription_group",
             sc(
@@ -1880,7 +1880,9 @@ mqtt_listener(Bind) ->
                         default => <<"3s">>
                     }
                 )},
-            {?EMQX_AUTHENTICATION_CONFIG_ROOT_NAME, authentication(listener)}
+            {?EMQX_AUTHENTICATION_CONFIG_ROOT_NAME, (authentication(listener))#{
+                importance => ?IMPORTANCE_HIDDEN
+            }}
         ].
 
 base_listener(Bind) ->
@@ -2299,7 +2301,7 @@ server_ssl_opts_schema(Defaults, IsRanchListener) ->
                         #{
                             required => false,
                             %% TODO: remove after e5.0.2
-                            hidden => true,
+                            importance => ?IMPORTANCE_HIDDEN,
                             validator => fun ocsp_inner_validator/1
                         }
                     )},
@@ -2997,7 +2999,7 @@ quic_feature_toggle(Desc) ->
         typerefl:alias("boolean", typerefl:union([true, false, 0, 1])),
         #{
             desc => Desc,
-            hidden => true,
+            importance => ?IMPORTANCE_HIDDEN,
             required => false,
             converter => fun
                 (true) -> 1;
@@ -3012,7 +3014,7 @@ quic_lowlevel_settings_uint(Low, High, Desc) ->
         range(Low, High),
         #{
             required => false,
-            hidden => true,
+            importance => ?IMPORTANCE_HIDDEN,
             desc => Desc
         }
     ).
@@ -3023,9 +3025,9 @@ is_quic_ssl_opts(Name) ->
         "cacertfile",
         "certfile",
         "keyfile",
-        "verify"
+        "verify",
+        "password"
         %% Followings are planned
-        %% , "password"
         %% , "hibernate_after"
         %% , "fail_if_no_peer_cert"
         %% , "handshake_timeout"

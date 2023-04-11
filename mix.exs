@@ -65,14 +65,14 @@ defmodule EMQXUmbrella.MixProject do
       # maybe forbid to fetch quicer
       {:emqtt,
        github: "emqx/emqtt", tag: "1.8.5", override: true, system_env: maybe_no_quic_env()},
-      {:rulesql, github: "emqx/rulesql", tag: "0.1.4"},
+      {:rulesql, github: "emqx/rulesql", tag: "0.1.5"},
       {:observer_cli, "1.7.1"},
       {:system_monitor, github: "ieQu1/system_monitor", tag: "3.0.3"},
       {:telemetry, "1.1.0"},
       # in conflict by emqtt and hocon
       {:getopt, "1.0.2", override: true},
       {:snabbkaffe, github: "kafka4beam/snabbkaffe", tag: "1.0.7", override: true},
-      {:hocon, github: "emqx/hocon", tag: "0.37.2", override: true},
+      {:hocon, github: "emqx/hocon", tag: "0.38.0", override: true},
       {:emqx_http_lib, github: "emqx/emqx_http_lib", tag: "0.5.2", override: true},
       {:esasl, github: "emqx/esasl", tag: "0.2.0"},
       {:jose, github: "potatosalad/erlang-jose", tag: "1.11.2"},
@@ -93,7 +93,7 @@ defmodule EMQXUmbrella.MixProject do
        github: "ninenines/ranch", ref: "a692f44567034dacf5efcaa24a24183788594eb7", override: true},
       # in conflict by grpc and eetcd
       {:gpb, "4.19.5", override: true, runtime: false},
-      {:hackney, github: "benoitc/hackney", tag: "1.18.1", override: true}
+      {:hackney, github: "emqx/hackney", tag: "1.18.1-1", override: true}
     ] ++
       emqx_apps(profile_info, version) ++
       enterprise_deps(profile_info) ++ bcrypt_dep() ++ jq_dep() ++ quicer_dep()
@@ -221,6 +221,11 @@ defmodule EMQXUmbrella.MixProject do
           applications: applications(edition_type),
           skip_mode_validation_for: [
             :emqx_gateway,
+            :emqx_stomp,
+            :emqx_mqttsn,
+            :emqx_coap,
+            :emqx_lwm2m,
+            :emqx_exproto,
             :emqx_dashboard,
             :emqx_resource,
             :emqx_connector,
@@ -281,6 +286,11 @@ defmodule EMQXUmbrella.MixProject do
         emqx_authz: :permanent,
         emqx_auto_subscribe: :permanent,
         emqx_gateway: :permanent,
+        emqx_stomp: :permanent,
+        emqx_mqttsn: :permanent,
+        emqx_coap: :permanent,
+        emqx_lwm2m: :permanent,
+        emqx_exproto: :permanent,
         emqx_exhook: :permanent,
         emqx_bridge: :permanent,
         emqx_rule_engine: :permanent,
@@ -394,10 +404,12 @@ defmodule EMQXUmbrella.MixProject do
     bin = Path.join(release.path, "bin")
     etc = Path.join(release.path, "etc")
     log = Path.join(release.path, "log")
+    plugins = Path.join(release.path, "plugins")
 
     Mix.Generator.create_directory(bin)
     Mix.Generator.create_directory(etc)
     Mix.Generator.create_directory(log)
+    Mix.Generator.create_directory(plugins)
     Mix.Generator.create_directory(Path.join(etc, "certs"))
 
     Enum.each(
@@ -610,6 +622,7 @@ defmodule EMQXUmbrella.MixProject do
       &[
         "etc",
         "data",
+        "plugins",
         "bin/node_dump"
         | &1
       ]
